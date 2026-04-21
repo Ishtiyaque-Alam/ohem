@@ -13,7 +13,7 @@ import torchvision.transforms as T
 MEAN = [0.485, 0.456, 0.406]
 STD  = [0.224, 0.224, 0.224]
 
-IMG_SIZE = 380   # EfficientNet-B4 native resolution
+IMG_SIZE = 224   # MobileNetV3-Large native resolution
 
 
 def get_transforms(split: str) -> T.Compose:
