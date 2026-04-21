@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import pickle
 import sys
 
 import numpy as np
@@ -62,7 +63,41 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--seed",        type=int,   default=42)
     p.add_argument("--output_dir",  type=str,   default="/kaggle/working",
                    help="Where to save predictions CSV")
+    p.add_argument(
+        "--trust_checkpoint",
+        action="store_true",
+        help=(
+            "Allow unsafe checkpoint loading (weights_only=False). "
+            "Use only for trusted checkpoints."
+        ),
+    )
     return p.parse_args()
+
+
+def load_checkpoint(path: str, device: torch.device, trust_checkpoint: bool):
+    """
+    PyTorch 2.6 changed torch.load default to weights_only=True.
+    Keep the safe path by default, and require explicit opt-in for unsafe load.
+    """
+    load_kwargs = {"map_location": device}
+
+    if trust_checkpoint:
+        try:
+            return torch.load(path, weights_only=False, **load_kwargs)
+        except TypeError:
+            # For older torch versions that do not expose weights_only.
+            return torch.load(path, **load_kwargs)
+
+    try:
+        try:
+            return torch.load(path, weights_only=True, **load_kwargs)
+        except TypeError:
+            return torch.load(path, **load_kwargs)
+    except pickle.UnpicklingError as e:
+        raise RuntimeError(
+            "Checkpoint could not be loaded with safe mode (weights_only=True). "
+            "If this checkpoint is trusted, rerun with --trust_checkpoint."
+        ) from e
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -116,7 +151,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # ── load model ────────────────────────────────────────────────────────
-    ckpt  = torch.load(args.checkpoint, map_location=device)
+    ckpt  = load_checkpoint(args.checkpoint, device, args.trust_checkpoint)
     model = build_model(pretrained=False).to(device)
     model.load_state_dict(ckpt["model_state"])
     print(f"\nLoaded checkpoint (epoch {ckpt['epoch']}, QWK={ckpt['qwk']:.4f})")
